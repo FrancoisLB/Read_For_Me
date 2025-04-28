@@ -1,7 +1,31 @@
+# Python code Read For Me which is dedicated to visualy impaired people
+# to read A4 document, based on Raspberry PI.
+# Copyright 2025 Read For Me
+# Contributors: see AUTHORS file
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>
+"""
+ App class to handle the main application logic for the Read For Me project.
+ This class manages the interaction between the user, the GPIO keypad,
+ and the audio playback system.
+ It provides methods for capturing images, performing OCR,
+ and converting text to speech.
+ It also handles volume and speed adjustments for the audio playback.
+"""
 import os
 import time
 import json
-
 from logger import logger
 from constantes import CONFIG_FILE, DEFAULT_SETTINGS, SOUNDS, FILTER_SETTINGS
 from player import Player
@@ -24,107 +48,105 @@ class Settings:
         Init, set mplayer instance and read saved or recorded settings
         """
         self.player = player
-
         # read config file, fallback to default settings
-        try:
-            f = open(CONFIG_FILE,"r")
-            self.data = json.loads(f.read())
-            f.close()
-        except Exception as e:
-            self.data = DEFAULT_SETTINGS
-            self.timer = 1
-        # end try
 
+        with open(CONFIG_FILE, "r", encoding='utf-8') as f:
+            try:
+                self.data = json.loads(f.read())
+            except (FileNotFoundError, json.JSONDecodeError):
+                self.data = DEFAULT_SETTINGS
+                self.timer = 1
         # set default value if value is not set in current file
         for key, value in DEFAULT_SETTINGS.items():
             if key not in self.data:
                 self.data[key] = value
 
-    # VOLUME ####################################################
-    def set_volume(self, val):
+    def set_volume(self, val:int) -> None:
         """
         Set volume between 0 and 100%
+        
+        Parameters:
+        -----------
+        val: int
+            The volume level to set (0-100) 
+    
+        Returns:
+        --------
+        None
         """
-        vol = int(val)
-        if vol < 0:
-            vol = 0
-        elif vol > 100:
-            vol = 100
-        logger.info('VOL ' + str(vol))
-        self.player.volume_set(vol)
+        self.player.volume_set(int(val))
 
-    def volume_inc(self):
-        """
+    def volume_inc(self) -> None:
+        """ 
         Raise reading volume
         """
         self.data['volume'] += 4
         self.set_volume_play()
         self.save()
 
-    def volume_dec(self):
-        """
+    def volume_dec(self) -> None:
+        """ 
         Lower reading volume
         """
         self.data['volume'] -= 4
         self.set_volume_play()
         self.save()
 
-    def set_volume_play(self):
+    def set_volume_play(self) -> None:
         """
         Set current volume to reading volume
         """
         self.set_volume(self.data['volume'])
 
-    def set_volume_help(self):
+    def set_volume_help(self) -> None:
         """
         Set current volume to help volume
         """
         self.set_volume(self.data['volume_help'])
 
-    # speed ####################################################
-    def speed_inc(self):
+
+    def speed_inc(self) -> None:
         """
         Raise reading speed, and save
         """
         self.data['speed'] *= 1.25
         self.player.speed_set(self.data['speed'])
-        logger.info('speed: %s' % self.data['speed'])
         self.save()
 
-    def speed_dec(self):
+    def speed_dec(self) -> None:
         """
         Raise reading speed, and save
         """
         self.data['speed'] *= 0.8
         self.player.speed_set(self.data['speed'])
-        logger.info('speed: %s' % self.data['speed'])
         self.save()
 
-    def save(self):
+    def save(self) -> None:
         """
         Save current settings in config file
         """
-        try:
-            f = open(CONFIG_FILE, "w")
-            f.write(json.dumps(self.data))
-            f.close()
-        except Exception as e:
-            pass
-
+        with open(CONFIG_FILE, "w", encoding='utf-8') as f:
+            try:
+                f.write(json.dumps(self.data))
+            except (OSError, IOError, json.JSONDecodeError):
+                logger.error("Failed to save settings to config file")
 
 class App():
     """
-    Main app for PiTextReader
-
-    - initialize controlers objects: player, settings
-    - define association between GPIO and callbacks
-    - handle capture to speech process
+    App class to handle the main application logic for the Read For Me project.
+    This class manages the interaction between the user, the GPIO keypad,
+    and the audio playback system.
+    It provides methods for capturing images, performing OCR,
+    and converting text to speech.
+    It also handles volume and speed adjustments for the audio playback.
     """
-    def __init__(self, keyGPIO):
-        self.basename = '/tmp/scan' 
+    def __init__(self, keyboard) -> None:
+        """
+        Init, set mplayer instance and read saved or recorded settings
+        """
+        self.basename = '/tmp/scan'
         self.player = Player()
         self.settings = Settings(self.player)
-
         # Must be coherent with constantes.CB
         self.callbacks=[self.shutdown,
                         self.capture,
@@ -137,31 +159,31 @@ class App():
                         self.player.backward,
                         self.player.forward
                         ]
-
-        self.keyGPIO = keyGPIO
-
+        self.keyboard = keyboard
         self.shutdown_click = False
-
         logger.info('app.init')
 
-    def link_buttons(self):
-        if self.buttons: 
-            for key in self.buttons.dict_callback:
-                callback=self.callbacks[key.value]
-                self.buttons.link(self.buttons.dict_callback[key],callback)
-    
-    def start(self):
-        self.keyGPIO.start()
-        self.keyGPIO.links(self.callbacks)
-        
-    def wait(self):
-        """Attend les entrées clavier sans bloquer"""
-        print("En attente d'une touche... ")
-        if self.keyGPIO is not None:
-            print("Confilg_file : ",CONFIG_FILE)
-            self.keyGPIO.listen()
+    def start(self) -> None:
+        """
+        Start the application
+        """
+        self.keyboard.start()
+        self.keyboard.links(self.callbacks)
 
-    def play_start_stop_cb(self):
+    def wait(self) -> None:
+        """ 
+        Wait for keyboard input
+        This function is non-blocking and allows the application to continue
+        running while waiting for user input.
+        It uses the keyboard instance to listen for key presses and trigger
+        the corresponding callback functions.
+        """
+        print("Waiting a key ...")
+        if self.keyboard is not None:
+            print("Config_file : ",CONFIG_FILE)
+            self.keyboard.listen()
+
+    def play_start_stop_cb(self) -> None:
         """
         Start and pause audio player
         TODO restart if paused, start over if ended
@@ -172,7 +194,7 @@ class App():
         #self.player.play(self.basename)
         self.player.pause()
 
-    def capture(self):
+    def capture(self) -> None:
         """
         Main process from image capture to speech:
         1. Capture an image
@@ -183,24 +205,20 @@ class App():
         logger.info('app.capture')
 
         # 1. Capture an image
-
-        # Take photo
+        # Take a picture
         self.settings.set_volume_play()
         self.player.play(SOUNDS + "camera-shutter")
         reader.snapshot(self.basename)
         logger.info('app.capture.snapshot')
-
         # OCR to text
         # play message to say the process started
         self.player.play(SOUNDS + "ocr")
         time.sleep(1)
-
         # play waiting song
         self.player.play(SOUNDS + "orange", extension="mp3")
 
         # 2. OCR to text
         reader.ocr_to_text(self.basename, FILTER_SETTINGS['rotation'], FILTER_SETTINGS['filter'])
-
         # stop song
         self.player.stop()
         time.sleep(0.5)
@@ -208,30 +226,27 @@ class App():
         try:
             # Cleanup text
             reader.clean_text(self.basename)
-
             # 3. Text to speech
             reader.text_to_sound(self.basename)
-
             # 4. Start audio player
             if os.stat("/tmp/scan.txt").st_size != 0:
                 self.player.play(self.basename)
             else:
-                raise Exception('audio file empty')
-        except:
-            logger.error("Cannot read")
+                raise ValueError('audio file is empty')
+        except (FileNotFoundError, ValueError, OSError) as e:
+            logger.error("Cannot read: %s", e)
             self.player.play(SOUNDS + "erreur")
 
-        return
 
-    def cancel_cb(self):
+    def cancel_cb(self) -> None:
         """
         Stop the capture process
         """
         logger.info('app.Cancel')
         self.player.play(SOUNDS + 'cancel')
-        return
 
-    def shutdown(self):
+
+    def shutdown(self) -> None:
         """
         Ask for confirmation, then shutdown the system
         TODO set a timer to cancel if shutdown is not confirmed
@@ -242,7 +257,10 @@ class App():
         else:
             os.system('sudo shutdown now')
 
-    def close(self):
+    def close(self) -> None:
+        """
+        Close the application and clean up resources
+        """
         logger.info('app.Close')
         self.player.stop()
         self.player.close()

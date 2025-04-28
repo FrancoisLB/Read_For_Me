@@ -21,4 +21,4 @@
 # 
 # m h  dom mon dow   command
 
-@reboot cd /home/pi/PiTextReader-GPIO && /usr/bin/python3 /home/pi/PiTextReader-GPIO/app_keyGPIO.py >> /home/pi/cronlog.log 2>&1
+@reboot cd /home/pi/PiTextReader-GPIO && /usr/bin/python3 /home/pi/PiTextReader-GPIO/app_keypad.py >> /home/pi/cronlog.log 2>&1

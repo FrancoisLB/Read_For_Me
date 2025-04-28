@@ -1,0 +1,6 @@
+numpy
+matplotlib
+pytesseract
+imutils
+opencv-python
+gpiozero
