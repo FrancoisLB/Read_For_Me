@@ -74,7 +74,7 @@ class Settings:
         --------
         None
         """
-        self.player.volume_set(int(val))
+        self.player.set_volume(int(val))
 
     def volume_inc(self) -> None:
         """ 
@@ -110,7 +110,7 @@ class Settings:
         Raise reading speed, and save
         """
         self.data['speed'] *= 1.25
-        self.player.speed_set(self.data['speed'])
+        self.player.set_speed(self.data['speed'])
         self.save()
 
     def speed_dec(self) -> None:
@@ -118,7 +118,7 @@ class Settings:
         Raise reading speed, and save
         """
         self.data['speed'] *= 0.8
-        self.player.speed_set(self.data['speed'])
+        self.player.set_speed(self.data['speed'])
         self.save()
 
     def save(self) -> None:
@@ -207,15 +207,15 @@ class App():
         # 1. Capture an image
         # Take a picture
         self.settings.set_volume_play()
-        self.player.play(SOUNDS + "camera-shutter")
+        self.player.play(SOUNDS + "camera-shutter.wav")
         reader.snapshot(self.basename)
         logger.info('app.capture.snapshot')
         # OCR to text
         # play message to say the process started
-        self.player.play(SOUNDS + "ocr")
+        self.player.play(SOUNDS + "ocr.wav")
         time.sleep(1)
         # play waiting song
-        self.player.play(SOUNDS + "orange", extension="mp3")
+        self.player.play(SOUNDS + "orange.mp3")
 
         # 2. OCR to text
         reader.ocr_to_text(self.basename, FILTER_SETTINGS['rotation'], FILTER_SETTINGS['filter'])
@@ -230,12 +230,12 @@ class App():
             reader.text_to_sound(self.basename)
             # 4. Start audio player
             if os.stat("/tmp/scan.txt").st_size != 0:
-                self.player.play(self.basename)
+                self.player.play(self.basename+'.wav')
             else:
                 raise ValueError('audio file is empty')
         except (FileNotFoundError, ValueError, OSError) as e:
             logger.error("Cannot read: %s", e)
-            self.player.play(SOUNDS + "erreur")
+            self.player.play(SOUNDS + "erreur.wav")
 
 
     def cancel_cb(self) -> None:
@@ -252,7 +252,7 @@ class App():
         TODO set a timer to cancel if shutdown is not confirmed
         """
         if not self.shutdown_click:
-            self.player.play(SOUNDS + 'shutdown')
+            self.player.play(SOUNDS + 'shutdown.wav')
             self.shutdown_click = True
         else:
             os.system('sudo shutdown now')

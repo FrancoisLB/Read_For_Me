@@ -1,0 +1,7 @@
+[player]
+volume = 75
+volume_help = 75
+speed = 1.0
+[general]
+path_sounds= "./sounds/"
+

@@ -24,97 +24,129 @@ It uses the MPlayer command-line interface for playback control
 import os
 import signal
 import sys
+import time
+import subprocess
 from logger import logger
 
 class Player:
     """
     Handle MPlayer process
     """
-    def __init__(self):
-        """Start MPlayer process
+    def __init__(self, volume:int=95, volume_help:int=95, speed:float=1.10):
+        """
+        Constructor with start MPlayer process
+        
+        Parameters:
+        -----------     
+        volume: int
+            The volume level to set (0-100)
+        volume_help: int
+            The volume level for help audio (0-100)
+        speed: float    
+            The playback speed to set (0-2.0)
         """
         self.cmd_play = 'aplay'
         self.cmd_player = 'mplayer -slave -quiet -idle'
         signal.signal(signal.SIGINT, self.handler)
-        self.mplayer = os.popen(self.cmd_player, "w")
-        self.playing = False
+        # Open a subprocess with mplayer and set it to non-blocking
+        self.mplayer = subprocess.Popen(["mplayer", "-slave", "-quiet","-idle"],
+                                        stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                        stderr=subprocess.PIPE)
+        os.set_blocking(self.mplayer.stdout.fileno(), False)
+        self.volume = volume
+        self.volume_help = volume_help
+        self.speed = speed
 
-    def play_file(self, basename:str) -> None:
+    def is_playing(self):
+        """ Check if MPlayer is playing
         """
-        Play an audio file using aplay
-            Parameters:
-            basename (str): The base name of the audio file to play
-    
-            Returns:
-            None
-        """
-        logger.info('player.play_file')
-        self.playing=True
-        outfile = basename+ '.wav'
-        cmd = self.cmd_play + ' ' + outfile
-        logger.info("PLAY %s ", cmd)
-        os.system(cmd)
-        self.playing=False
+        # Get the current position in the audio file
+        self.mplayer.stdin.write(b'get_time_pos\n')
+        self.mplayer.stdin.flush()
+        # Wait for the output
+        time.sleep(1)
+        # Read the output in non-blocking mode  (last line is the current position)
+        first=True
+        while True:
+            line = self.mplayer.stdout.readline().decode('utf-8')
+            if line != '':
+                line_prev=line
+                if first:
+                    first=False
+            else:
+                if first:
+                    output=line.strip()
+                else:
+                    output=line_prev.strip()
+                break
+        logger.info('Player.is_playing %s', output)
+        return "ANS_TIME_POSITION" in output
 
-
-    def play(self, basename:str, extension:str='wav') -> None:
+    def play(self, audiofile:str, blocking:bool=False) -> None:
         """
         play an audiofile using MPlayer
         
         Parameters:
         -----------
-        basename: str
-            The base name of the audio file to play
-        extension: str
-            The extension of the audio file to play
+        audiofile: str
+            The name of the audio file to play
+        blocking: bool
+            If True, wait for the audio to finish before returning
+            If False, return immediately after starting playback
         
         Returns:
         --------
         None
         """
-        logger.info('player.play')
-        if self.mplayer:
-            outfile = basename+ '.' + extension
-            self.mplayer.write("stop\n")
-            self.mplayer.write(f"load {outfile}\n")
-            self.mplayer.flush()
+        logger.info('Player.play')
+        if self.mplayer and os.path.exists(audiofile):
+            logger.debug('mplayer:play')
+            self.mplayer.stdin.write(b"stop\n")
+            self.mplayer.stdin.write(bytes(f"load {audiofile}\n", "utf-8"))
+            self.mplayer.stdin.flush()
+            # Wait for the audio to finish playing
+            if blocking:
+                time.sleep(5)
+                while self.is_playing():
+                    time.sleep(5)
 
     def pause(self) -> None:
         """ Pause the audio playback
         """
-        logger.info('player.pause')
+        logger.info('Player.pause')
         if self.mplayer:
-            self.mplayer.write("pause\n")
-            self.mplayer.flush()
+            logger.debug('mplayer:pause')
+            self.mplayer.stdin.write(b'pause\n')
+            self.mplayer.stdin.flush()
 
     def stop(self) -> None:
         """ Stop the audio playback
         """
-        logger.info('player.stop')
+        logger.info('Player.stop')
         if self.mplayer:
-            self.mplayer.write("stop\n")
-            self.mplayer.flush()
-            self.playing=False
+            logger.debug('mplayer:stop')
+            self.mplayer.stdin.write(b'stop\n')
+            self.mplayer.stdin.flush()
 
     def forward(self) -> None:
         """ Skip forward in the audio playback
         """
-        logger.info('player.forward')
+        logger.info('Player.forward')
         if self.mplayer:
-            self.mplayer.write("seek +10\n")
-            self.mplayer.flush()
+            self.mplayer.stdin.write(b'seek +10\n')
+            self.mplayer.stdin.flush()
 
     def backward(self) -> None:
         """ Skip backward in the audio playback
         """
         logger.info('player.backward')
         if self.mplayer:
-            self.mplayer.write("seek -10\n")
-            self.mplayer.flush()
+            self.mplayer.stdin.write(b'seek -10\n')
+            self.mplayer.stdin.flush()
 
-    def speed_set(self, value:float) -> None:
-        """ 
-        Set the playback speed
+    def set_speed(self, value:float) -> None:
+        """
+        set speed using 
         
         Parameters:
         -----------
@@ -125,16 +157,44 @@ class Player:
         --------
         None
         """
-        logger.info('player.speed_set %f', value)
+        logger.info('Player.set_speed')
         if self.mplayer:
             # Ensure the speed is within the range of 0 to 2.0
             # and set it using MPlayer
             value = max(value, 0.0)
             value = min(value, 2.0)
-            self.mplayer.write(f"speed_set {value}\n")
-            self.mplayer.flush()
+            logger.info('mplayer:set value %f', value)
+            self.mplayer.stdin.write(bytes(f"speed_set {value}\n", "utf-8"))
+            self.mplayer.stdin.flush()
 
-    def volume_set(self,value:int) -> None:
+    def reset_speed(self) -> None:
+        """
+        reset speed to initial speed value using MPlayer
+        """
+        logger.info('Player:reset_speed')
+        if self.mplayer:
+            logger.info('mplayer:reset speed')
+            self.mplayer.stdin.write(bytes(f"speed_set {self.speed}\n", "utf-8"))
+            self.mplayer.stdin.flush()
+
+    def inc_speed(self) -> None:
+        """increase speed with memory
+        """
+        logger.info('Player:inc_speed')
+        if self.mplayer:
+            self.speed += 0.1
+            self.set_speed(self.speed)
+
+    def dec_speed(self) -> None:
+        """
+        decrease speed with memory
+        """
+        logger.info('Player:dec_speed')
+        if self.mplayer:
+            self.speed -= 0.1
+            self.set_speed(self.speed)
+
+    def set_volume(self, value:int) -> None:
         """ 
         Set the volume level
         
@@ -147,22 +207,53 @@ class Player:
         --------
         None
         """
-        logger.info('player.volume_set %d', value)
+        logger.info('Player.volume_set %d', value)
         if self.mplayer:
             # Ensure the volume is within the range of 0 to 100
             # and set it using MPlayer
             value = max(value, 0)
             value = min(value, 100)
-            self.mplayer.write(f"volume {value} 1\n")
-            self.mplayer.flush()
+            logger.debug('mplayer:set volume %d', value)
+            self.mplayer.stdin.write(bytes(f"volume {value} 1\n", "utf-8"))
+            self.mplayer.stdin.flush()
+
+    def reset_volume(self, help_sound:bool=False) -> None:
+        """
+        reset volume to initial volume value using MPlayer
+        help_sound: bool
+            If True, set the volume to the help sound level
+            If False, set the volume to the normal level
+        """
+        logger.info('Player:reset_volume')
+        if self.mplayer:
+            value = self.volume_help if help_sound else self.volume
+            logger.debug('mplayer:set volume %f', value)
+            self.mplayer.stdin.write(bytes(f"volume {value} 1\n", "utf-8"))
+            self.mplayer.stdin.flush()
+
+    def inc_volume(self) -> None:
+        """increase volume with memory
+        """
+        logger.info('Player:inc_volume')
+        if self.mplayer:
+            self.volume += 5
+            self.set_volume(self.volume)
+
+    def dec_volume(self) -> None:
+        """decrease volume with memory
+        """
+        logger.info('Player:dec_volume')
+        if self.mplayer:
+            self.volume -= 5
+            self.set_volume(self.volume)
 
     def close(self) -> None:
         """ Close the MPlayer process
         """
-        logger.info('player.close')
+        logger.info('Player.close')
         if self.mplayer:
-            self.mplayer.write("quit\n")
-            self.mplayer.flush()
+            self.mplayer.stdin.write(b'quit\n')
+            self.mplayer.stdin.flush()
         self.mplayer = None
 
     # pylint: disable=unused-argument
