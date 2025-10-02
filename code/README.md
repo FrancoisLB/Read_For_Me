@@ -4,6 +4,9 @@
 
 This project is the result of a collaboration between the **My Human Kit** association and the **ECAM Louis De Broglie** engineering school. It was carried out as a student project during the first trimester of 2025.
 
+
+![Readforme machine](./img/machine_a_lire_2025_02.jpg)
+
 ## Project Description
 
 The goal is to create a reading machine capable of acquiring text from an image capture and reading it aloud using speech synthesis.  
